@@ -1,9 +1,15 @@
-from typing import List, Optional, Dict
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, field_validator
+from typing import Optional, List, Dict
 import requests
 import json
 from bs4 import BeautifulSoup
 import re
 from datetime import datetime, timedelta
+
+app = FastAPI()
+
+# Constants remain the same as in the original script
 LOCATION = {
     "Los Angeles": "los-angeles",
     "New York": "new-york",
@@ -33,20 +39,43 @@ TITLE = {
     "DevOps Engineer": "devops-engineer",
 }
 
+class JobSearchRequest(BaseModel):
+    job_title: str
+    job_location: Optional[str] = None
+
+    @field_validator('job_title')
+    @classmethod
+    def validate_job_title(cls, v):
+        if v not in TITLE:
+            raise ValueError(f"Invalid job title. Must be one of: {', '.join(TITLE.keys())}")
+        return v
+
+    @field_validator('job_location')
+    @classmethod
+    def validate_job_location(cls, v):
+        if v is not None and v not in LOCATION:
+            raise ValueError(f"Invalid location. Must be one of: {', '.join(LOCATION.keys())}")
+        return v
+
+class JobListing(BaseModel):
+    title: str
+    type: str
+    salary: str
+    company: str
+    company_image: str
+    posted_date: str
+    location: str
+    posting_url: str
 
 def sanitize_string(input_string: str) -> str:
-    # Replace Unicode escape sequences with their actual characters
+    # Existing sanitization function from original script
     sanitized_string = input_string.encode('utf-8').decode('unicode_escape')
-
-    # Remove any unwanted characters (e.g., non-printable characters)
     sanitized_string = re.sub(r'[^\x20-\x7E]', '', sanitized_string)
-
-    # Replace multiple spaces with a single space
     sanitized_string = re.sub(r'\s+', ' ', sanitized_string).strip()
-
     return sanitized_string
 
 def parse_relative_date(relative_date: str) -> str:
+    # Existing date parsing function from original script
     today = datetime.today()
     if 'day' in relative_date:
         days = int(re.search(r'\d+', relative_date).group())
@@ -63,6 +92,7 @@ def parse_relative_date(relative_date: str) -> str:
     return today.strftime('%Y-%m-%d')
 
 def parse_jobs(url: str) -> List[Dict[str, str]]:
+    # Existing job parsing function from original script
     response = requests.get(url)
     soup = BeautifulSoup(response.content, 'html.parser')
     job_listings = []
@@ -88,54 +118,27 @@ def parse_jobs(url: str) -> List[Dict[str, str]]:
             job['location'] = 'N/A'
         posting_url = job_element.find("a", class_="mr-2 text-sm font-semibold text-brand-burgandy hover:underline")['href']
         job['posting_url'] = f"https://wellfound.com{posting_url}" if posting_url else "N/A"
-        # if len(location_elements) > 2:
-        #     job['experience'] = location_elements[2].find("span", class_="pl-1 text-xs").text.strip()
-        # else:
-        #     job['experience'] = 'N/A'
-
 
         job_listings.append(job)
 
     return job_listings
 
-
-def search_jobs(job_title: str, job_location: Optional[str] = None) -> Optional[List[str]]:
-    if not job_title:
-        raise ValueError("Job title is required.")
+@app.post("/search-jobs", response_model=List[JobListing])
+def search_jobs(request: JobSearchRequest):
+    job_title = request.job_title
+    job_location = request.job_location
 
     if job_location is None:
         URL = f"https://wellfound.com/role/{TITLE[job_title]}"
-        print(URL)
+    else:
+        URL = f"https://wellfound.com/role/l/{TITLE[job_title]}/{LOCATION[job_location]}"
+
+    try:
         jobs = parse_jobs(URL)
-        save_to_json(jobs, f"{job_title}_all_locations.json")
-        return json.dumps(jobs, indent=4)
+        return jobs
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching jobs: {str(e)}")
 
-    if job_location not in LOCATION:
-        print(f"Location '{job_location}' is not recognized.")
-        return None
-    if job_title not in TITLE:
-        print(f"Job title '{job_title}' is not recognized.")
-        return None
-
-    URL = f"https://wellfound.com/role/l/{TITLE[job_title]}/{LOCATION[job_location]}"
-    print(URL)
-
-    jobs = parse_jobs(URL)
-    save_to_json(jobs, f"{job_title}_{job_location}.json")
-
-    return json.dumps(jobs, indent=4)
-
-
-def save_to_json(data: List[Dict[str, str]], filename: str):
-    with open(filename, 'w') as json_file:
-        json.dump(data, json_file, indent=4)
-        print(f"Saved results to {filename}")
-
-
-if __name__ == '__main__':
-
-    # results_all_locations = search_jobs("Software Engineer")
-    results_all_locations = search_jobs("Software Engineer", "Los Angeles")
-    if results_all_locations:
-        print("Job Listings in All Locations:")
-        print(results_all_locations)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app)
