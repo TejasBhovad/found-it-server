@@ -3,13 +3,20 @@ from pydantic import BaseModel, field_validator
 from typing import Optional, List, Dict
 import requests
 import json
+from fastapi.middleware.cors import CORSMiddleware
 from bs4 import BeautifulSoup
 import re
 from datetime import datetime, timedelta
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Constants remain the same as in the original script
 LOCATION = {
     "Los Angeles": "los-angeles",
     "New York": "new-york",
@@ -68,14 +75,12 @@ class JobListing(BaseModel):
     posting_url: str
 
 def sanitize_string(input_string: str) -> str:
-    # Existing sanitization function from original script
     sanitized_string = input_string.encode('utf-8').decode('unicode_escape')
     sanitized_string = re.sub(r'[^\x20-\x7E]', '', sanitized_string)
     sanitized_string = re.sub(r'\s+', ' ', sanitized_string).strip()
     return sanitized_string
 
 def parse_relative_date(relative_date: str) -> str:
-    # Existing date parsing function from original script
     today = datetime.today()
     if 'day' in relative_date:
         days = int(re.search(r'\d+', relative_date).group())
@@ -92,7 +97,6 @@ def parse_relative_date(relative_date: str) -> str:
     return today.strftime('%Y-%m-%d')
 
 def parse_jobs(url: str) -> List[Dict[str, str]]:
-    # Existing job parsing function from original script
     response = requests.get(url)
     soup = BeautifulSoup(response.content, 'html.parser')
     job_listings = []
