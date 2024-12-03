@@ -2,6 +2,17 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, field_validator
 from typing import Optional, List, Dict
 import requests
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import (
+    TimeoutException,
+    NoSuchElementException,
+    WebDriverException
+)
+import time
 import json
 from fastapi.middleware.cors import CORSMiddleware
 from bs4 import BeautifulSoup
@@ -143,6 +154,87 @@ def search_jobs(request: JobSearchRequest):
         return jobs
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching jobs: {str(e)}")
+
+class MessageRequest(BaseModel):
+    message: str
+    email: str
+    password: str
+
+
+@app.post("/message", response_model=str)
+async def send_message(request: MessageRequest):
+    chrome_options = Options()
+
+    # Stealth techniques
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+
+    # Additional browser fingerprint modifications
+    chrome_options.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+
+    # Optional: Run in headless mode
+    # chrome_options.add_argument("--headless")
+    message = request.message
+    email = request.email
+    password = request.password
+
+    print(f"Sending message: {message}")
+    print(f"Sender email: {email}")
+    print(f"Sender password: {password}")
+
+    # Initialize the WebDriver (make sure you have the appropriate driver installed)
+    driver = webdriver.Chrome()  # or webdriver.Firefox()
+
+    try:
+        # Navigate to the login page
+        driver.get("https://wellfound.com/login")
+
+        # Wait for the page to load completely
+        time.sleep(2)  # Adjust this as needed or use WebDriverWait for better handling
+
+        # Find the email input field and enter the email
+        email_input = driver.find_element(By.ID, "user_email")
+        email_input.send_keys(email)
+
+        # Find the password input field and enter the password
+        password_input = driver.find_element(By.ID, "user_password")
+        password_input.send_keys(password)
+
+        # Find the submit button and click it
+        login_button = driver.find_element(By.NAME, "commit")
+        login_button.click()
+
+        # Optionally wait for a few seconds to observe the result after login
+        time.sleep(5)  # Adjust as needed
+
+        # Navigate to the messages page
+        driver.get("https://wellfound.com/jobs/messages")
+
+        # Wait for messages to load
+        time.sleep(2)  # Adjust as needed
+
+        # Extract messages from the page
+        messages = []
+        message_elements = driver.find_elements(By.CSS_SELECTOR, '[data-test="MessagesListItem"]')
+
+        for message_element in message_elements:
+            sender_name = message_element.find_element(By.CSS_SELECTOR, '.styles_sender__OXIee').text
+            message_text = message_element.find_element(By.CSS_SELECTOR, '.styles_messageText__Xqdns').text
+            timestamp = message_element.find_element(By.CSS_SELECTOR, '.styles_date__oHT46').text
+
+            messages.append({
+                "sender": sender_name,
+                "message": message_text,
+                "timestamp": timestamp,
+            })
+
+    finally:
+        # Close the browser after completing actions
+        driver.quit()
+
+    return {"status": "Message sent successfully", "messages": messages}
 
 if __name__ == "__main__":
     import uvicorn
