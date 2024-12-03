@@ -100,7 +100,8 @@ def parse_jobs(url: str) -> List[Dict[str, str]]:
     response = requests.get(url)
     soup = BeautifulSoup(response.content, 'html.parser')
     job_listings = []
-
+    if not soup.find("div", class_="mb-6 w-full rounded border border-gray-400 bg-white"):
+        return job_listings
     job_elements = soup.find_all("div", class_="mb-6 w-full rounded border border-gray-400 bg-white")
     for job_element in job_elements:
         job = {}
